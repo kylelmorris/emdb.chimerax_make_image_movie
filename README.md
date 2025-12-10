@@ -96,10 +96,11 @@ Credit: Davis lab - MIT
 
 ## 📄 License
 
-MIT License.
+Apache license
 
 ---
 
 ## 👤 Author
 
 Kyle Morris, EMBL‑EBI
+GPT-5 assisted
