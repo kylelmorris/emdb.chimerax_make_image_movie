@@ -46,19 +46,14 @@ Given an output base name `OUTBASE`, the script creates:
 
 ## 🚀 Example Usage
 
-### Basic image
-```
-python emdb.chimerax_make_image_movie.py --mrc map.mrc
-```
-
-### Movie + image
+### Basic movie + image
 ```
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --format both
 ```
 
-### MIT auto-contour mode
+### 3 sigma auto-contour mode and image
 ```
-python emdb.chimerax_make_image_movie.py --mrc map.mrc --auto_contour MIT
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --format image --auto_contour 3sig
 ```
 
 ### Custom output directory + prefix
@@ -71,9 +66,9 @@ python emdb.chimerax_make_image_movie.py --mrc map.mrc --outdir results/ --outna
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --transparent
 ```
 
-### Write scripts only (no ChimeraX execution)
+### Write scripts only (no ChimeraX execution) for spin movie
 ```
-python emdb.chimerax_make_image_movie.py --mrc map.mrc --script-only
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --format movie --script-only
 ```
 
 ---
