@@ -104,6 +104,12 @@ def write_chimerax_script_movie(
     elif colour == "emdb":
         commands.append("color radial #1 center #1 palette #AD2447:#EA3861:#38B249:#90CB8A:#CFE7CB")
         commands.append("volume #1 transparency 0.1")
+    elif colour == "rainbow":
+        commands.append("color radial #1 center #1 palette #DC504D:#E37F4F:#EDEB7E:#71B86D:#5BB6E7:#4263AA")
+        commands.append("volume #1 transparency 0.1")
+    elif colour == "rainbowr":
+        commands.append("color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D")
+        commands.append("volume #1 transparency 0.1")
 
     # Background colour
     if background:
@@ -131,7 +137,7 @@ def write_chimerax_script_movie(
         "zoom 0.8",
         "turn x 90",
         "turn z -30",
-        "turn y 1 360",
+        "turn y 0.5 720",
     ])
 
     if quality == "publication":
@@ -142,7 +148,7 @@ def write_chimerax_script_movie(
         commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
 
     commands.extend([
-        "wait 360",
+        "wait 720",
     ])
 
     if quality == "publication":
@@ -193,6 +199,12 @@ def write_chimerax_script_image(
         commands.append("volume #1 transparency 0.1")
     elif colour == "emdb":
         commands.append("color radial #1 center #1 palette #AD2447:#EA3861:#38B249:#90CB8A:#CFE7CB")
+        commands.append("volume #1 transparency 0.1")
+    elif colour == "rainbow":
+        commands.append("color radial #1 center #1 palette #DC504D:#E37F4F:#EDEB7E:#71B86D:#5BB6E7:#4263AA")
+        commands.append("volume #1 transparency 0.1")
+    elif colour == "rainbowr":
+        commands.append("color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D")
         commands.append("volume #1 transparency 0.1")
 
     # Background colour
@@ -263,7 +275,7 @@ def main():
     group_map.add_argument('--model')
 
     group_map.add_argument(
-        '--auto_contour',
+        '--auto-contour',
         choices=['rmsd', 'p99', 'hybrid', '3sig', '6sig', '9sig', 'abs30', 'MIT'],
         default='6sig',  help="Auto contour calculation method"
     )
@@ -289,7 +301,7 @@ def main():
 
     group_render.add_argument(
         '--colour', '--color',
-        choices=['kelly', 'blue', 'emdb'],
+        choices=['kelly', 'blue', 'emdb', 'rainbow', 'rainbowr'],
         default='blue', help="Colour scheme for map and model"
     )
 
@@ -313,13 +325,13 @@ def main():
 
     group_out.add_argument('--save-session', action='store_true')
     group_out.add_argument('--script-only', action='store_true')
-    group_out.add_argument('--no_exit', action='store_true')
+    group_out.add_argument('--no-exit', action='store_true')
 
     # -------------------------------
     # GROUP: Execution Control
     # -------------------------------
     group_exec = parser.add_argument_group("Execution Control Options")
-    group_exec.add_argument('--ignore_check', action='store_true')
+    group_exec.add_argument('--ignore-check', action='store_true')
 
     args = parser.parse_args()
 
