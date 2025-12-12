@@ -79,11 +79,12 @@ def compute_auto_contour(path, method):
 # ===========================================
 
 def write_chimerax_script_movie(
-    mrc_file, pdb_file, output_movie, output_session,
+    mrc_file, pdb_file, output_movie, output_session, quality,
     colour, background, contour, exit=True, save=False
 ):
     commands = [
         f"open {shlex.quote(mrc_file)}",
+        "windowsize 750 750",
         "volume calc_level #1",
     ]
 
@@ -131,9 +132,27 @@ def write_chimerax_script_movie(
         "turn x 90",
         "turn z -30",
         "turn y 1 360",
-        "movie record supersample 4 transparentBackground true format png",
+    ])
+
+    if quality == "publication":
+        commands.append("movie record supersample 4 size 1400,1400 transparentBackground true format png",)
+    elif quality == "onscreen":
+        commands.append("movie record supersample 3 size 750,750 transparentBackground true format png",)
+    elif quality == "web":
+        commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
+
+    commands.extend([
         "wait 360",
-        f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",
+    ])
+
+    if quality == "publication":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",)
+    elif quality == "onscreen":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",)   
+    elif quality == "web":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality higher",) 
+
+    commands.extend([
         "stop",
     ])
 
@@ -157,6 +176,7 @@ def write_chimerax_script_image(
 ):
     commands = [
         f"open {shlex.quote(mrc_file)}",
+        "windowsize 750 750",
         "volume calc_level #1",
     ]
 
@@ -259,6 +279,12 @@ def main():
         '--format',
         choices=['movie', 'image', 'both'],
         default='image', help="Produce movie, image or both"
+    )
+    
+    group_render.add_argument(
+        '--quality',
+        choices=['publication', 'onscreen', 'web'],
+        default='onscreen', help="quality to use in rendering"
     )
 
     group_render.add_argument(
@@ -364,7 +390,7 @@ def main():
         output_session = f"{outbase}_chimerax_movie_session.cxs"
 
         script_path = write_chimerax_script_movie(
-            mrc, pdb, output_movie, output_session,
+            mrc, pdb, output_movie, output_session, args.quality, 
             args.colour, args.background, contour_value,
             save=args.save_session,
             exit=not args.no_exit
