@@ -51,6 +51,13 @@ Given an output base name `OUTBASE`, the script creates:
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --format both
 ```
 
+### Headless production environment
+Use the auto-headless entrypoint when running on servers, containers, or other environments without a display:
+```
+python emdb.chimerax_make_image_movie_auto_headless.py --mrc emd_XXXX.map --format both --quality web
+```
+This mode detects a headless session and runs ChimeraX with offscreen rendering. The `web` quality profile is tuned for lightweight production output and generates both the movie and image assets in one pass.
+
 ### 3 sigma auto-contour mode and image
 ```
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --format image --auto_contour 3sig
