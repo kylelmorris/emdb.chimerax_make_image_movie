@@ -54,9 +54,9 @@ python emdb.chimerax_make_image_movie.py --mrc map.mrc --format both
 ### Headless production environment
 Use the auto-headless entrypoint when running on servers, containers, or other environments without a display:
 ```
-python emdb.chimerax_make_image_movie_auto_headless.py --mrc emd_XXXX.map --format both --quality web
+python emdb.chimerax_make_image_movie_auto_headless.py --mrc emd_XXXX.map --format movie --movie-format apng --quality web2
 ```
-This mode detects a headless session and runs ChimeraX with offscreen rendering. The `web` quality profile is tuned for lightweight production output and generates both the movie and image assets in one pass.
+This mode detects a headless session and runs ChimeraX with offscreen rendering. The `web2` quality profile is tuned for lightweight production output, and this example writes an APNG movie asset.
 
 ### 3 sigma auto-contour mode and image
 ```

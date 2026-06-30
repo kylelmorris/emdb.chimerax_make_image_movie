@@ -80,7 +80,7 @@ def compute_auto_contour(path, method):
 
 def write_chimerax_script_movie(
     mrc_file, pdb_file, output_movie, output_session, quality,
-    colour, background, contour, exit=True, save=False
+    colour, background, contour, movie_format, exit=True, save=False
 ):
     commands = [
         f"open {shlex.quote(mrc_file)}",
@@ -130,15 +130,26 @@ def write_chimerax_script_movie(
         commands.append("volume #1 transparency 0")
 
     # Movie camera + render
-    commands.extend([
-        "graphics silhouettes true width 2",
-        "lighting soft",
-        "view #1",
-        "zoom 0.8",
-        "turn x 90",
-        "turn z -30",
-        "turn y 0.5 720",
-    ])
+    if quality in ("web", "web1", "web2", "web3"):
+        commands.extend([
+            "graphics silhouettes true width 2",
+            "lighting soft",
+            "view #1",
+            "zoom 0.8",
+            "turn x 90",
+            "turn z -30",
+            "turn y 0.5 720",
+        ])
+    else:
+        commands.extend([
+            "graphics silhouettes true width 2",
+            "lighting soft",
+            "view #1",
+            "zoom 0.8",
+            "turn x 90",
+            "turn z -30",
+            "turn y 0.5 720",
+        ])
 
     if quality == "publication":
         commands.append("movie record supersample 4 size 1400,1400 transparentBackground true format png",)
@@ -146,17 +157,29 @@ def write_chimerax_script_movie(
         commands.append("movie record supersample 3 size 750,750 transparentBackground true format png",)
     elif quality == "web":
         commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
+    elif quality == "web1":
+        commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
+    elif quality == "web2":
+        commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
+    elif quality == "web3":
+        commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
 
     commands.extend([
         "wait 720",
     ])
 
     if quality == "publication":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",)
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
     elif quality == "onscreen":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",)   
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
     elif quality == "web":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality higher",) 
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality higher",)
+    elif quality == "web1":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality higher",)
+    elif quality == "web2":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality higher",)
+    elif quality == "web3":
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality higher",)
 
     commands.extend([
         "stop",
@@ -261,6 +284,13 @@ def run_chimerax(script_path):
 
 def main():
 
+    movie_extension_map = {
+        "h264": ".mp4",
+        "mov": ".mov",
+        "avi": ".avi",
+        "apng": ".apng",
+    }
+
     parser = argparse.ArgumentParser(
         description="Generate ChimeraX movies or images",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -295,8 +325,15 @@ def main():
     
     group_render.add_argument(
         '--quality',
-        choices=['publication', 'onscreen', 'web'],
+        choices=['publication', 'onscreen', 'web', 'web1', 'web2', 'web3'],
         default='onscreen', help="quality to use in rendering"
+    )
+
+    group_render.add_argument(
+        '--movie-format',
+        choices=['h264', 'mov', 'avi', 'apng'],
+        default='mov',
+        help="Movie encoding/container format"
     )
 
     group_render.add_argument(
@@ -397,12 +434,12 @@ def main():
     # ============================
 
     if args.format in ("movie", "both"):
-        output_movie = f"{outbase}_chimerax_movie.mov"
+        output_movie = f"{outbase}_chimerax_movie{movie_extension_map[args.movie_format]}"
         output_session = f"{outbase}_chimerax_movie_session.cxs"
 
         script_path = write_chimerax_script_movie(
             mrc, pdb, output_movie, output_session, args.quality, 
-            args.colour, args.background, contour_value,
+            args.colour, args.background, contour_value, args.movie_format,
             save=args.save_session,
             exit=not args.no_exit
         )
