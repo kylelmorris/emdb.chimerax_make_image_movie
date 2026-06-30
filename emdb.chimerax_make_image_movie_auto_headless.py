@@ -152,9 +152,9 @@ def write_chimerax_script_movie(
         ])
 
     if quality == "publication":
-        commands.append("movie record supersample 4 size 1400,1400 transparentBackground true format png",)
+        commands.append("movie record supersample 4 size 1400,1400 transparentBackground true",)
     elif quality == "onscreen":
-        commands.append("movie record supersample 3 size 750,750 transparentBackground true format png",)
+        commands.append("movie record supersample 3 size 750,750 transparentBackground true",)
     elif quality == "web":
         commands.append("movie record supersample 1 size 513,270 transparentBackground false",)
     elif quality == "web1":
@@ -178,13 +178,13 @@ def write_chimerax_script_movie(
     elif quality == "onscreen":
         commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
     elif quality == "web":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
     elif quality == "web1":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
     elif quality == "web2":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
     elif quality == "web3":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
 
     commands.extend([
         "stop",
