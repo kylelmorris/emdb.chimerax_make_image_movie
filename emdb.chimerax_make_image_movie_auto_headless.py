@@ -82,10 +82,10 @@ def write_chimerax_script_movie(
     mrc_file, pdb_file, output_movie, output_session, quality,
     colour, background, contour, exit=True, save=False
 ):
+    window_size = "513 270" if quality == "web" else "750 750"
     commands = [
         f"open {shlex.quote(mrc_file)}",
-        "windowsize 750 750",
-        "volume calc_level #1",
+        f"windowsize {window_size}",
     ]
 
     # Contour block
@@ -130,26 +130,42 @@ def write_chimerax_script_movie(
         commands.append("volume #1 transparency 0")
 
     # Movie camera + render
-    commands.extend([
-        "graphics silhouettes true width 2",
-        "lighting soft",
-        "view #1",
-        "zoom 0.8",
-        "turn x 90",
-        "turn z -30",
-        "turn y 0.5 720",
-    ])
+    if quality == "web":
+        commands.extend([
+            "graphics silhouettes true width 2",
+            "lighting soft",
+            "view #1",
+            "zoom 0.8",
+            "turn x 90",
+            "turn z -30",
+            "turn y 1 360",
+        ])
+    else:
+        commands.extend([
+            "graphics silhouettes true width 2",
+            "lighting soft",
+            "view #1",
+            "zoom 0.8",
+            "turn x 90",
+            "turn z -30",
+            "turn y 0.5 720",
+        ])
 
     if quality == "publication":
         commands.append("movie record supersample 4 size 1400,1400 transparentBackground true format png",)
     elif quality == "onscreen":
         commands.append("movie record supersample 3 size 750,750 transparentBackground true format png",)
     elif quality == "web":
-        commands.append("movie record supersample 2 size 750,750 transparentBackground true format png",)
+        commands.append("movie record supersample 1 size 513,270 transparentBackground false format png",)
 
-    commands.extend([
-        "wait 720",
-    ])
+    if quality == "web":
+        commands.extend([
+            "wait 360",
+        ])
+    else:
+        commands.extend([
+            "wait 720",
+        ])
 
     if quality == "publication":
         commands.append(f"movie encode output {shlex.quote(output_movie)} framerate 30 quality highest",)
@@ -183,7 +199,6 @@ def write_chimerax_script_image(
     commands = [
         f"open {shlex.quote(mrc_file)}",
         "windowsize 750 750",
-        "volume calc_level #1",
     ]
 
     if contour == "MIT":
@@ -248,12 +263,74 @@ def write_chimerax_script_image(
     return script_path
 
 
+def resolve_chimerax_executable(chimerax_arg=None, ignore_check=False):
+    """
+    Resolve ChimeraX executable.
+
+    Priority:
+    1. User-provided --chimerax path
+    2. chimerax found in PATH
+    """
+
+    if chimerax_arg:
+        chimerax_path = os.path.abspath(os.path.expanduser(chimerax_arg))
+
+        if ignore_check:
+            return chimerax_path
+
+        if os.path.isfile(chimerax_path) and os.access(chimerax_path, os.X_OK):
+            return chimerax_path
+
+        sys.exit(
+            f"Provided ChimeraX executable is not valid or not executable:\n"
+            f"{chimerax_path}"
+        )
+
+    chimerax_in_path = shutil.which("chimerax")
+
+    if chimerax_in_path:
+        return chimerax_in_path
+
+    if ignore_check:
+        return "chimerax"
+
+    sys.exit(
+        "ChimeraX not found in PATH.\n"
+        "Please provide the executable path using:\n"
+        "  --chimerax /path/to/chimerax\n\n"
+        "Example on macOS:\n"
+        "  --chimerax /Applications/ChimeraX.app/Contents/MacOS/ChimeraX"
+    )
+
+
+
 # ======================
 # Runner
 # ======================
 
-def run_chimerax(script_path):
-    subprocess.run(["chimerax", "--script", shlex.quote(script_path)])
+def is_headless_environment():
+    """Return True when no graphical display appears to be available."""
+
+    # On Linux/Unix clusters, GUI-capable sessions usually expose DISPLAY
+    # for X11 or WAYLAND_DISPLAY for Wayland. If neither exists, treat the
+    # session as headless and use ChimeraX offscreen mode.
+    if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
+        return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+    # macOS/Windows normally launch GUI apps without DISPLAY/WAYLAND_DISPLAY.
+    # Do not force offscreen mode there unless the user is on Linux-like HPC.
+    return False
+
+
+def run_chimerax(script_path, chimerax_executable):
+    if is_headless_environment():
+        cmd = [chimerax_executable, "--offscreen", "--nogui", script_path]
+        print("Detected headless environment: running ChimeraX with --offscreen --nogui")
+    else:
+        cmd = [chimerax_executable, script_path]
+        print("Detected graphical environment: running ChimeraX without --offscreen --nogui")
+
+    subprocess.run(cmd, check=True)
 
 # ======================
 # CLI
@@ -307,7 +384,8 @@ def main():
 
     group_render.add_argument(
         '--background',
-        default='#161f28', help="Background colour i.e. 'white', 'black','#FFFFFF', '#181818', '#2A2A2A', '#161f28', '#F2F2F2' (Default is blueksy dark mode)"
+        choices=['white', 'black','#FFFFFF', '#181818', '#2A2A2A', '#161f28'],
+        default='#161f28', help="Background colour (Default is blueksy dark mode)"
     )
 
     group_render.add_argument(
@@ -330,13 +408,24 @@ def main():
     # GROUP: Execution Control
     # -------------------------------
     group_exec = parser.add_argument_group("Execution Control Options")
+    group_exec.add_argument(
+        '--chimerax',
+        help='Path to ChimeraX executable, e.g. /Applications/ChimeraX.app/Contents/MacOS/ChimeraX'
+    )
+    
     group_exec.add_argument('--ignore-check', action='store_true')
-
     args = parser.parse_args()
 
-    # ChimeraX PATH check
-    if not args.script_only and not args.ignore_check and not shutil.which("chimerax"):
-        sys.exit("ChimeraX not found in PATH")
+    # ChimeraX executable resolution
+    if not args.script_only:
+        chimerax_executable = resolve_chimerax_executable(
+            chimerax_arg=args.chimerax,
+            ignore_check=args.ignore_check
+        )
+        print(f"Using ChimeraX executable: {chimerax_executable}")
+    else:
+        chimerax_executable = None
+
 
     # --- Contour ---
     contour_value = args.contour if args.contour is not None else compute_auto_contour(args.mrc, args.auto_contour)
@@ -410,7 +499,7 @@ def main():
         print(f"Movie script → {script_path}")
 
         if not args.script_only:
-            run_chimerax(script_path)
+            run_chimerax(script_path, chimerax_executable)
             print(f"Movie created → {output_movie}")
 
     # ============================
@@ -431,7 +520,7 @@ def main():
         print(f"Image script → {script_path}")
 
         if not args.script_only:
-            run_chimerax(script_path)
+            run_chimerax(script_path, chimerax_executable)
             print(f"Image created → {output_image}")
 
     # Cleanup
