@@ -23,7 +23,7 @@ Supported methods:
 ## 🎨 Rendering Options
 
 - Generate **image**, **movie**, or **both**
-- Colour themes: `kelly`, `blue`, `emdb`
+- Colour themes: `kelly`, `blue`, `emdb`, `rainbow`, `rainbowr`, `chain`
 - Backgrounds including Bluesky dark mode (`#161f28`)
 - Optional transparent PNG rendering
 - Optional ChimeraX session `.cxs` export
@@ -40,7 +40,7 @@ Given an output base name `OUTBASE`, the script creates:
 - `OUTBASE_chimerax_image_script.cxc`
 - `OUTBASE_chimerax_movie_session.cxs` *(optional)*
 - `OUTBASE_chimerax_image_session.cxs` *(optional)*
-- `OUTBASE_command.txt` (records the exact command used)
+- `OUTBASE_summary.txt` (records the exact command used and a summary of outputs)
 
 ---
 
@@ -73,9 +73,20 @@ python emdb.chimerax_make_image_movie.py --mrc map.mrc --outdir results/ --outna
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --transparent
 ```
 
+### Chain-specific colouring
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb --colour chain --chain-colours "A:orange B:cyan C:lightblue D:purple"
+```
+In `chain` mode, the script colours the loaded model chains individually and then applies `color zone #1 near #2` to the map.
+
 ### Write scripts only (no ChimeraX execution) for spin movie
 ```
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --format movie --script-only
+```
+
+### Disable summary output
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --no-summary
 ```
 
 ---
@@ -98,6 +109,7 @@ Credit: Davis lab - MIT
 - `.gz` input (map or model) is automatically decompressed.
 - When `--script-only` is used, ChimeraX is not launched and only a script for running ChimeraX is produced.
 - All outputs are placed in `--outdir` or beside the MRC file by default.
+- Summary output is enabled by default; use `--no-summary` to skip writing `OUTBASE_summary.txt`.
 
 ---
 

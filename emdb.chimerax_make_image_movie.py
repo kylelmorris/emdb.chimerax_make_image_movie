@@ -8,6 +8,7 @@ import sys
 import os
 import gzip
 import shlex
+import re
 import numpy as np
 import mrcfile
 
@@ -78,23 +79,52 @@ def compute_auto_contour(path, method):
 # ChimeraX script writers
 # ===========================================
 
-def write_chimerax_script_movie(
-    mrc_file, pdb_file, output_movie, output_session, quality,
-    colour, background, contour, movie_format, exit=True, save=False
-):
-    window_size = "513 270" if quality in ("web", "web1", "web2", "web3") else "750 750"
-    commands = [
-        f"open {shlex.quote(mrc_file)}",
-        f"windowsize {window_size}",
-    ]
+def parse_chain_colours(chain_colours):
+    """Parse 'chain:colour chain:colour' strings into (chain, colour) pairs."""
+    parsed = []
+    seen_chain_ids = set()
+    chain_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
-    # Contour block
-    if contour == "MIT":
-        commands.append("volume calc_level #1")
-    elif contour is not None:
-        commands.append(f"volume #1 level {contour}")
+    for token in chain_colours.split():
+        if ":" not in token:
+            raise ValueError(
+                f"Invalid --chain-colours entry '{token}'. Expected format chain:colour"
+            )
 
-    # Map colours
+        chain_id, colour = token.split(":", 1)
+        if not chain_id or not colour:
+            raise ValueError(
+                f"Invalid --chain-colours entry '{token}'. Expected format chain:colour"
+            )
+        if not chain_pattern.match(chain_id):
+            raise ValueError(
+                f"Invalid chain ID '{chain_id}' in --chain-colours entry '{token}'. "
+                "Use an alphanumeric chain ID with optional . _ - characters."
+            )
+        if any(ch.isspace() for ch in colour) or ":" in colour or "/" in colour:
+            raise ValueError(
+                f"Invalid colour '{colour}' in --chain-colours entry '{token}'. "
+                "Use a ChimeraX colour name or hex value without spaces, ':' or '/'."
+            )
+        if chain_id in seen_chain_ids:
+            raise ValueError(
+                f"Duplicate chain ID '{chain_id}' in --chain-colours. "
+                "Specify each chain only once."
+            )
+
+        parsed.append((chain_id, colour))
+        seen_chain_ids.add(chain_id)
+
+    if not parsed:
+        raise ValueError(
+            "No chain colours provided. Expected at least one entry in --chain-colours"
+        )
+
+    return parsed
+
+
+def extend_map_colouring_commands(commands, colour):
+    """Append map colouring commands for the requested scheme."""
     if colour == "kelly":
         commands.append("volume #1 color cornflowerblue")
         commands.append("volume #1 transparency 0.1")
@@ -111,6 +141,43 @@ def write_chimerax_script_movie(
         commands.append("color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D")
         commands.append("volume #1 transparency 0.1")
 
+
+def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours=None):
+    """Append model colouring commands for the requested scheme."""
+    if not pdb_present:
+        return
+
+    if colour == "chain":
+        for chain_id, chain_colour in chain_colours or []:
+            commands.append(f"color #2/{chain_id} {chain_colour}")
+        commands.append("color zone #1 near #2")
+        commands.append("volume #1 transparency 0.1")
+    elif colour == "kelly":
+        commands.append("color #2 royalblue target c")
+    else:
+        commands.append("color #2 grey")
+
+def write_chimerax_script_movie(
+    mrc_file, pdb_file, output_movie, output_session, quality,
+    colour, background, contour, movie_format, exit=True, save=False,
+    chain_colours=None
+):
+    window_size = "513 270" if quality in ("web", "web1", "web2", "web3") else "750 750"
+    commands = [
+        f"open {shlex.quote(mrc_file)}",
+        f"windowsize {window_size}",
+    ]
+
+    # Contour block
+    if contour == "MIT":
+        commands.append("volume calc_level #1")
+    elif contour is not None:
+        commands.append(f"volume #1 level {contour}")
+
+    # Map colours
+    if colour != "chain":
+        extend_map_colouring_commands(commands, colour)
+
     # Background colour
     if background:
         commands.append(f"set bgColor {background}")
@@ -119,11 +186,7 @@ def write_chimerax_script_movie(
     if pdb_file:
         commands.append(f"open {shlex.quote(pdb_file)}")
         commands.append("view #1")
-
-        if colour == "kelly":
-            commands.append("color #2 royalblue target c")
-        else:
-            commands.append("color #2 grey")
+        extend_model_colouring_commands(commands, colour, True, chain_colours)
 
         commands.extend(["hide #2 atoms", "show #2 cartoons"])
     else:
@@ -152,17 +215,17 @@ def write_chimerax_script_movie(
         ])
 
     if quality == "publication":
-        commands.append("movie record supersample 4 size 1400,1400 transparentBackground true",)
+        commands.append("movie record supersample 4 size 1400,1400",)
     elif quality == "onscreen":
-        commands.append("movie record supersample 3 size 750,750 transparentBackground true",)
+        commands.append("movie record supersample 3 size 750,750",)
     elif quality == "web":
-        commands.append("movie record supersample 1 size 513,270 transparentBackground false",)
+        commands.append("movie record supersample 1 size 513,270",)
     elif quality == "web1":
-        commands.append("movie record supersample 2 size 513,270 transparentBackground false",)
+        commands.append("movie record supersample 2 size 513,270",)
     elif quality == "web2":
-        commands.append("movie record supersample 3 size 513,270 transparentBackground false",)
+        commands.append("movie record supersample 3 size 513,270",)
     elif quality == "web3":
-        commands.append("movie record supersample 4 size 513,270 transparentBackground false",)
+        commands.append("movie record supersample 4 size 513,270",)
 
     if quality in ("web", "web1", "web2", "web3"):
         commands.extend([
@@ -206,7 +269,8 @@ def write_chimerax_script_movie(
 
 def write_chimerax_script_image(
     mrc_file, pdb_file, output_image, output_session,
-    colour, background, transparent_background, contour, exit=True, save=False
+    colour, background, transparent_background, contour, exit=True, save=False,
+    chain_colours=None
 ):
     commands = [
         f"open {shlex.quote(mrc_file)}",
@@ -218,21 +282,8 @@ def write_chimerax_script_image(
     elif contour is not None:
         commands.append(f"volume #1 level {contour}")
 
-    if colour == "kelly":
-        commands.append("volume #1 color cornflowerblue")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "blue":
-        commands.append("color radial #1 center #1 palette #045a8d:#2b8cbe:#74a9cf:#bdc9e1:#f1eef6")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "emdb":
-        commands.append("color radial #1 center #1 palette #AD2447:#EA3861:#38B249:#90CB8A:#CFE7CB")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "rainbow":
-        commands.append("color radial #1 center #1 palette #DC504D:#E37F4F:#EDEB7E:#71B86D:#5BB6E7:#4263AA")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "rainbowr":
-        commands.append("color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D")
-        commands.append("volume #1 transparency 0.1")
+    if colour != "chain":
+        extend_map_colouring_commands(commands, colour)
 
     # Background colour
     if background:
@@ -241,11 +292,7 @@ def write_chimerax_script_image(
     if pdb_file:
         commands.append(f"open {shlex.quote(pdb_file)}")
         commands.append("view #1")
-
-        if colour == "kelly":
-            commands.append("color #2 royalblue target c")
-        else:
-            commands.append("color #2 grey")
+        extend_model_colouring_commands(commands, colour, True, chain_colours)
 
         commands.extend(["hide #2 atoms", "show #2 cartoons"])
     else:
@@ -273,6 +320,13 @@ def write_chimerax_script_image(
         out.write("\n".join(commands))
 
     return script_path
+
+
+def format_relative_path(path, base_dir):
+    """Format path relative to base_dir for summary output."""
+    if path is None:
+        return "(none)"
+    return os.path.relpath(path, base_dir)
 
 
 def resolve_chimerax_executable(chimerax_arg=None, ignore_check=False):
@@ -359,7 +413,19 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Generate ChimeraX movies or images",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=type(
+            "HelpFormatter",
+            (argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter),
+            {}
+        ),
+        epilog=(
+            "Examples:\n"
+            "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --format both\n"
+            "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb \\\n"
+            "      --colour chain --chain-colours \"A:orange B:cyan C:lightblue\"\n"
+            "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb \\\n"
+            "      --colour chain --chain-colours \"A:#ff7f0e B:#00bcd4\"\n"
+        )
     )
 
     # -------------------------------
@@ -404,8 +470,14 @@ def main():
 
     group_render.add_argument(
         '--colour', '--color',
-        choices=['kelly', 'blue', 'emdb', 'rainbow', 'rainbowr'],
-        default='blue', help="Colour scheme for map and model"
+        choices=['kelly', 'blue', 'emdb', 'rainbow', 'rainbowr', 'chain'],
+        default='blue', help="Colour scheme for map and model; chain requires --model and --chain-colours"
+    )
+
+    group_render.add_argument(
+        '--chain-colours',
+        metavar='"CHAIN:COLOUR [CHAIN:COLOUR ...]"',
+        help='Chain-specific colours in the format "A:orange B:cyan C:lightblue"'
     )
 
     group_render.add_argument(
@@ -424,11 +496,24 @@ def main():
     group_out = parser.add_argument_group("Output Options")
 
     group_out.add_argument('--outname', help="Base prefix for output files")
-    group_out.add_argument('--outdir', help="Output directory")
+    group_out.add_argument('--outdir', '--out-dir', help="Output directory")
 
     group_out.add_argument('--save-session', action='store_true')
     group_out.add_argument('--script-only', action='store_true')
     group_out.add_argument('--no-exit', action='store_true')
+    group_out.add_argument(
+        '--summary',
+        dest='summary',
+        action='store_true',
+        help='Write an output summary file with the command used and generated outputs'
+    )
+    group_out.add_argument(
+        '--no-summary',
+        dest='summary',
+        action='store_false',
+        help='Disable writing the output summary file'
+    )
+    parser.set_defaults(summary=True)
 
     # -------------------------------
     # GROUP: Execution Control
@@ -441,6 +526,20 @@ def main():
     
     group_exec.add_argument('--ignore-check', action='store_true')
     args = parser.parse_args()
+
+    if args.colour == "chain" and not args.model:
+        parser.error("--colour chain requires --model to be specified")
+    if args.colour == "chain" and not args.chain_colours:
+        parser.error("--colour chain requires --chain-colours")
+    if args.chain_colours and args.colour != "chain":
+        parser.error("--chain-colours can only be used with --colour chain")
+
+    chain_colours = None
+    if args.chain_colours:
+        try:
+            chain_colours = parse_chain_colours(args.chain_colours)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     # ChimeraX executable resolution
     if not args.script_only:
@@ -482,7 +581,7 @@ def main():
     # ============================
 
     if args.outdir:
-        outdir = args.outdir
+        outdir = os.path.abspath(args.outdir)
         os.makedirs(outdir, exist_ok=True)
     else:
         outdir = os.path.dirname(mrc)
@@ -496,16 +595,21 @@ def main():
     # ============================
     # COMMAND LOGGING
     # ============================
-    command_log_path = f"{outbase}_command.txt"
-
-    try:
-        with open(command_log_path, "w") as cmd_out:
-            cmd_out.write("Command used to run this script:\n")
-            cmd_out.write(" ".join(shlex.quote(a) for a in sys.argv))
-            cmd_out.write("\n")
-        print(f"Command log written → {command_log_path}")
-    except Exception as e:
-        print(f"Warning: could not write command log file: {e}")
+    summary_path = f"{outbase}_summary.txt"
+    summary_dir = os.path.dirname(summary_path)
+    summary_lines = [
+        "Command used to run this script:",
+        " ".join(shlex.quote(a) for a in sys.argv),
+        "",
+        "Resolved inputs:",
+        f"  MRC: {format_relative_path(mrc, summary_dir)}",
+        f"  Model: {format_relative_path(pdb, summary_dir)}",
+        f"  Output directory: {format_relative_path(outdir, summary_dir)}",
+        f"  Output prefix: {format_relative_path(outbase, summary_dir)}",
+        f"  Format: {args.format}",
+        f"  Contour: {contour_value}",
+    ]
+    generated_outputs = []
 
     # ============================
     # MOVIE
@@ -519,10 +623,15 @@ def main():
             mrc, pdb, output_movie, output_session, args.quality, 
             args.colour, args.background, contour_value, args.movie_format,
             save=args.save_session,
+            chain_colours=chain_colours,
             exit=not args.no_exit
         )
 
         print(f"Movie script → {script_path}")
+        generated_outputs.append(f"Movie script: {format_relative_path(script_path, summary_dir)}")
+        generated_outputs.append(f"Movie output: {format_relative_path(output_movie, summary_dir)}")
+        if args.save_session:
+            generated_outputs.append(f"Movie session: {format_relative_path(output_session, summary_dir)}")
 
         if not args.script_only:
             run_chimerax(script_path, chimerax_executable)
@@ -540,14 +649,32 @@ def main():
             mrc, pdb, output_image, output_session,
             args.colour, args.background, args.transparent, contour_value,
             save=args.save_session,
+            chain_colours=chain_colours,
             exit=not args.no_exit
         )
 
         print(f"Image script → {script_path}")
+        generated_outputs.append(f"Image script: {format_relative_path(script_path, summary_dir)}")
+        generated_outputs.append(f"Image output: {format_relative_path(output_image, summary_dir)}")
+        if args.save_session:
+            generated_outputs.append(f"Image session: {format_relative_path(output_session, summary_dir)}")
 
         if not args.script_only:
             run_chimerax(script_path, chimerax_executable)
             print(f"Image created → {output_image}")
+
+    if generated_outputs:
+        summary_lines.extend(["", "Generated outputs:"])
+        summary_lines.extend(f"  {line}" for line in generated_outputs)
+
+    if args.summary:
+        try:
+            with open(summary_path, "w") as summary_out:
+                summary_out.write("\n".join(summary_lines))
+                summary_out.write("\n")
+            print(f"Summary written → {summary_path}")
+        except Exception as e:
+            print(f"Warning: could not write summary file: {e}")
 
     # Cleanup
     if args.mrc.endswith(".gz"):
