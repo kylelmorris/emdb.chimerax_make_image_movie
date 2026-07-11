@@ -148,7 +148,20 @@ def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours
         return
 
     if colour == "chain":
-        for chain_id, chain_colour in chain_colours or []:
+        chain_colours = chain_colours or []
+        default_colour = None
+        overrides = []
+
+        for chain_id, chain_colour in chain_colours:
+            if chain_id == "all":
+                default_colour = chain_colour
+            else:
+                overrides.append((chain_id, chain_colour))
+
+        if default_colour is not None:
+            commands.append(f"color #2 {default_colour}")
+
+        for chain_id, chain_colour in overrides:
             commands.append(f"color #2/{chain_id} {chain_colour}")
         commands.append("color zone #1 near #2")
         commands.append("volume #1 transparency 0.1")
@@ -157,9 +170,54 @@ def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours
     else:
         commands.append("color #2 grey")
 
+def derive_emd_id(mrc_file):
+    """Derive an EMD-style identifier from the input map filename."""
+    base = os.path.basename(mrc_file)
+    for suffix in (".map.gz", ".mrc.gz", ".map", ".mrc", ".gz"):
+        if base.lower().endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return base
+
+
+def derive_pdb_id(pdb_file):
+    """Derive a PDB-style identifier from the input model filename."""
+    if not pdb_file:
+        return None
+    base = os.path.basename(pdb_file)
+    for suffix in (".pdb.gz", ".cif.gz", ".mmcif.gz", ".ent.gz", ".pdb", ".cif", ".mmcif", ".ent", ".gz"):
+        if base.lower().endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return base
+
+
+def build_label_text(mrc_file, pdb_file):
+    """Format the corner label text from the input identifiers."""
+    emd_id = derive_emd_id(mrc_file)
+    pdb_id = derive_pdb_id(pdb_file) if pdb_file else None
+    if pdb_id:
+        return f"EMD-ID: {emd_id} | PDB ID: {pdb_id}"
+    return f"EMD-ID: {emd_id}"
+
+
+def extend_label_commands(commands, mrc_file, pdb_file):
+    """Append a 2D label command for the lower-right corner."""
+    label_text = build_label_text(mrc_file, pdb_file)
+    # ChimeraX 2D labels are anchored in window coordinates; placing the
+    # label near the lower-right corner keeps it readable in both image and
+    # movie output.
+    commands.extend([
+        "2dlabels create emdb_id_label text " + shlex.quote(label_text),
+        "2dlabels style emdb_id_label size 28 color white",
+        "2dlabels anchor emdb_id_label bottom right",
+        "2dlabels offset emdb_id_label -18 18",
+    ])
+
 def write_chimerax_script_movie(
     mrc_file, pdb_file, output_movie, output_session, quality,
     colour, background, contour, movie_format, exit=True, save=False,
+    label=False,
     chain_colours=None
 ):
     window_size = "513 270" if quality in ("web", "web1", "web2", "web3") else "750 750"
@@ -191,6 +249,9 @@ def write_chimerax_script_movie(
         commands.extend(["hide #2 atoms", "show #2 cartoons"])
     else:
         commands.append("volume #1 transparency 0")
+
+    if label:
+        extend_label_commands(commands, mrc_file, pdb_file)
 
     # Movie camera + render
     if quality in ("web", "web1", "web2", "web3"):
@@ -270,6 +331,7 @@ def write_chimerax_script_movie(
 def write_chimerax_script_image(
     mrc_file, pdb_file, output_image, output_session,
     colour, background, transparent_background, contour, exit=True, save=False,
+    label=False,
     chain_colours=None
 ):
     commands = [
@@ -297,6 +359,9 @@ def write_chimerax_script_image(
         commands.extend(["hide #2 atoms", "show #2 cartoons"])
     else:
         commands.append("volume #1 transparency 0")
+
+    if label:
+        extend_label_commands(commands, mrc_file, pdb_file)
 
     commands.extend([
         "graphics silhouettes true width 2",
@@ -424,6 +489,9 @@ def main():
             "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb \\\n"
             "      --colour chain --chain-colours \"A:orange B:cyan C:lightblue\"\n"
             "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb \\\n"
+            "      --colour chain --chain-colours \"all:green A:orange B:cyan\"\n"
+            "  Use \"all:<colour>\" to set the default model colour before per-chain overrides.\n"
+            "  python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb \\\n"
             "      --colour chain --chain-colours \"A:#ff7f0e B:#00bcd4\"\n"
         )
     )
@@ -488,6 +556,11 @@ def main():
 
     group_render.add_argument(
         '--transparent', action='store_true', help="Use transparent background for image output"
+    )
+    group_render.add_argument(
+        '--label',
+        action='store_true',
+        help='Add a bottom-right label with the EMD-ID and PDB ID'
     )
 
     # -------------------------------
@@ -623,6 +696,7 @@ def main():
             mrc, pdb, output_movie, output_session, args.quality, 
             args.colour, args.background, contour_value, args.movie_format,
             save=args.save_session,
+            label=args.label,
             chain_colours=chain_colours,
             exit=not args.no_exit
         )
@@ -649,6 +723,7 @@ def main():
             mrc, pdb, output_image, output_session,
             args.colour, args.background, args.transparent, contour_value,
             save=args.save_session,
+            label=args.label,
             chain_colours=chain_colours,
             exit=not args.no_exit
         )

@@ -73,11 +73,17 @@ python emdb.chimerax_make_image_movie.py --mrc map.mrc --outdir results/ --outna
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --transparent
 ```
 
+### Corner label with EMD and PDB IDs
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb --label
+```
+This adds a bottom-right 2D label in the generated ChimeraX script. If no model is provided, the label falls back to the map EMD-ID only.
+
 ### Chain-specific colouring
 ```
-python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb --colour chain --chain-colours "A:orange B:cyan C:lightblue D:purple"
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb --colour chain --chain-colours "all:green A:orange B:cyan C:lightblue D:purple"
 ```
-In `chain` mode, the script colours the loaded model chains individually and then applies `color zone #1 near #2` to the map.
+In `chain` mode, `all:<colour>` sets the default model colour first, then any per-chain entries override specific chains before `color zone #1 near #2` is applied.
 
 ### Write scripts only (no ChimeraX execution) for spin movie
 ```
