@@ -8,6 +8,7 @@ import sys
 import os
 import gzip
 import shlex
+import math
 import re
 import numpy as np
 import mrcfile
@@ -79,6 +80,109 @@ def compute_auto_contour(path, method):
 # ChimeraX script writers
 # ===========================================
 
+COLOUR_SPECS = {
+    # Map + model colour schemes
+    "kelly": {
+        "map_commands": [
+            "volume #1 color cornflowerblue",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 royalblue target c",
+        ],
+    },
+    "blue": {
+        "map_commands": [
+            "color radial #1 center #1 palette #045a8d:#2b8cbe:#74a9cf:#bdc9e1:#f1eef6",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 grey",
+        ],
+    },
+    "emdb": {
+        "map_commands": [
+            "color radial #1 center #1 palette #AD2447:#EA3861:#38B249:#90CB8A:#CFE7CB",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 grey",
+        ],
+    },
+    "rainbow": {
+        "map_commands": [
+            "color radial #1 center #1 palette #DC504D:#E37F4F:#EDEB7E:#71B86D:#5BB6E7:#4263AA",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 grey",
+        ],
+    },
+    "rainbowr": {
+        "map_commands": [
+            "color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 grey",
+        ],
+    },
+    "sunrise": {
+        "map_commands": [
+            "color radial #1 center #1 palette #ED8A35:#F5C573:#F2E7B5:#D4E2D0:#99CCD3:#6BADCB:#4E8DBF:#2356A8",
+            "volume #1 transparency 0.1",
+        ],
+        "model_commands": [
+            "color #2 grey",
+        ],
+    },
+    # Special chain colouring mode: the defaults come from --chain-colours.
+    "chain": {
+        "kind": "chain",
+        "requires_model": True,
+        "requires_chain_colours": True,
+    },
+}
+
+
+def available_colour_choices():
+    """Return CLI colour choices from the registry."""
+    return tuple(COLOUR_SPECS.keys())
+
+
+def get_colour_spec(colour):
+    try:
+        return COLOUR_SPECS[colour]
+    except KeyError as exc:
+        raise ValueError(f"Unknown colour scheme: {colour}") from exc
+
+
+def validate_colour_registry():
+    """Fail fast if a registry entry is malformed."""
+    for colour_name, spec in COLOUR_SPECS.items():
+        if spec.get("kind") == "chain":
+            continue
+
+        if "map_commands" not in spec or not isinstance(spec["map_commands"], list):
+            raise ValueError(f"Colour '{colour_name}' must define a map_commands list")
+        if "model_commands" not in spec or not isinstance(spec["model_commands"], list):
+            raise ValueError(f"Colour '{colour_name}' must define a model_commands list")
+
+
+def validate_colour_selection(colour, model, chain_colours, parser):
+    """Validate command-line dependencies for the selected colour."""
+    spec = get_colour_spec(colour)
+
+    if spec.get("requires_model") and not model:
+        parser.error(f"--colour {colour} requires --model to be specified")
+
+    if spec.get("requires_chain_colours") and not chain_colours:
+        parser.error(f"--colour {colour} requires --chain-colours")
+
+    if chain_colours and not spec.get("requires_chain_colours"):
+        parser.error("--chain-colours can only be used with --colour chain")
+
+
 def parse_chain_colours(chain_colours):
     """Parse 'chain:colour chain:colour' strings into (chain, colour) pairs."""
     parsed = []
@@ -125,21 +229,9 @@ def parse_chain_colours(chain_colours):
 
 def extend_map_colouring_commands(commands, colour):
     """Append map colouring commands for the requested scheme."""
-    if colour == "kelly":
-        commands.append("volume #1 color cornflowerblue")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "blue":
-        commands.append("color radial #1 center #1 palette #045a8d:#2b8cbe:#74a9cf:#bdc9e1:#f1eef6")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "emdb":
-        commands.append("color radial #1 center #1 palette #AD2447:#EA3861:#38B249:#90CB8A:#CFE7CB")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "rainbow":
-        commands.append("color radial #1 center #1 palette #DC504D:#E37F4F:#EDEB7E:#71B86D:#5BB6E7:#4263AA")
-        commands.append("volume #1 transparency 0.1")
-    elif colour == "rainbowr":
-        commands.append("color radial #1 center #1 palette #4263AA:#5BB6E7:#71B86D:#EDEB7E:#E37F4F:#DC504D")
-        commands.append("volume #1 transparency 0.1")
+    spec = get_colour_spec(colour)
+    for line in spec.get("map_commands", []):
+        commands.append(line)
 
 
 def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours=None):
@@ -147,7 +239,9 @@ def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours
     if not pdb_present:
         return
 
-    if colour == "chain":
+    spec = get_colour_spec(colour)
+
+    if spec.get("kind") == "chain":
         chain_colours = chain_colours or []
         default_colour = None
         overrides = []
@@ -165,10 +259,9 @@ def extend_model_colouring_commands(commands, colour, pdb_present, chain_colours
             commands.append(f"color #2/{chain_id} {chain_colour}")
         commands.append("color zone #1 near #2")
         commands.append("volume #1 transparency 0.1")
-    elif colour == "kelly":
-        commands.append("color #2 royalblue target c")
     else:
-        commands.append("color #2 grey")
+        for line in spec.get("model_commands", []):
+            commands.append(line)
 
 def derive_emd_id(mrc_file):
     """Derive an EMD-style identifier from the input map filename."""
@@ -214,11 +307,21 @@ def extend_label_commands(commands, mrc_file, pdb_file):
         "2dlabels offset emdb_id_label -18 18",
     ])
 
+
+def parse_turnxz(value):
+    try:
+        x, z = (float(part.strip()) for part in value.split(","))
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError("--turnxz requires two angles: X,Z (for example, 90,-30)")
+    if not math.isfinite(x) or not math.isfinite(z):
+        raise argparse.ArgumentTypeError("--turnxz angles must be finite numbers")
+    return x, z
+
 def write_chimerax_script_movie(
-    mrc_file, pdb_file, output_movie, output_session, quality,
-    colour, background, contour, movie_format, exit=True, save=False,
-    label=False,
-    chain_colours=None
+    mrc_file, pdb_file, output_movie, quality,
+    colour, background, contour, movie_format, exit=True,
+    label=False, session_only=False, script_suffix="script",
+    chain_colours=None, turnxz=(-90, 0)
 ):
     window_size = "513 270" if quality in ("web", "web1", "web2", "web3") else "750 750"
     commands = [
@@ -253,74 +356,84 @@ def write_chimerax_script_movie(
     if label:
         extend_label_commands(commands, mrc_file, pdb_file)
 
-    # Movie camera + render
-    if quality in ("web", "web1", "web2", "web3"):
-        commands.extend([
-            "graphics silhouettes true width 1",
-            "lighting soft",
-            "view #1",
-            "zoom 0.8",
-            "turn x 90",
-            "turn z -30",
-            "turn y 1 360",
-        ])
-    else:
+    if session_only:
         commands.extend([
             "graphics silhouettes true width 2",
             "lighting soft",
             "view #1",
             "zoom 0.8",
-            "turn x 90",
-            "turn z -30",
-            "turn y 0.5 720",
-        ])
-
-    if quality == "publication":
-        commands.append("movie record supersample 4 size 1400,1400",)
-    elif quality == "onscreen":
-        commands.append("movie record supersample 3 size 750,750",)
-    elif quality == "web":
-        commands.append("movie record supersample 1 size 513,270",)
-    elif quality == "web1":
-        commands.append("movie record supersample 2 size 513,270",)
-    elif quality == "web2":
-        commands.append("movie record supersample 3 size 513,270",)
-    elif quality == "web3":
-        commands.append("movie record supersample 4 size 513,270",)
-
-    if quality in ("web", "web1", "web2", "web3"):
-        commands.extend([
-            "wait 360",
+            f"turn x {turnxz[0]:g}",
+            f"turn z {turnxz[1]:g}",
         ])
     else:
+        # Movie camera + render
+        if quality in ("web", "web1", "web2", "web3"):
+            commands.extend([
+                "graphics silhouettes true width 1",
+                "lighting soft",
+                "view #1",
+                "zoom 0.8",
+                f"turn x {turnxz[0]:g}",
+                f"turn z {turnxz[1]:g}",
+                "turn y 1 360",
+            ])
+        else:
+            commands.extend([
+                "graphics silhouettes true width 2",
+                "lighting soft",
+                "view #1",
+                "zoom 0.8",
+                f"turn x {turnxz[0]:g}",
+                f"turn z {turnxz[1]:g}",
+                "turn y 0.5 720",
+            ])
+
+        if quality == "publication":
+            commands.append("movie record supersample 4 size 1400,1400",)
+        elif quality == "presentation":
+                    commands.append("movie record supersample 4 size 750,750",)
+        elif quality == "onscreen":
+            commands.append("movie record supersample 3 size 750,750",)
+        elif quality == "web":
+            commands.append("movie record supersample 1 size 513,270",)
+        elif quality == "web1":
+            commands.append("movie record supersample 2 size 513,270",)
+        elif quality == "web2":
+            commands.append("movie record supersample 3 size 513,270",)
+        elif quality == "web3":
+            commands.append("movie record supersample 4 size 513,270",)
+
+        if quality in ("web", "web1", "web2", "web3"):
+            commands.extend([
+                "wait 360",
+            ])
+        else:
+            commands.extend([
+                "wait 720",
+            ])
+
+        if quality == "publication":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        elif quality == "onscreen":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        elif quality == "web":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
+        elif quality == "web1":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
+        elif quality == "web2":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
+        elif quality == "web3":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
+
         commands.extend([
-            "wait 720",
+            "stop",
         ])
 
-    if quality == "publication":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
-    elif quality == "onscreen":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
-    elif quality == "web":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
-    elif quality == "web1":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
-    elif quality == "web2":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
-    elif quality == "web3":
-        commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 25 qscale 1 ",)
-
-    commands.extend([
-        "stop",
-    ])
-
-    if save:
-        commands.append(f"save {shlex.quote(output_session)}")
-    if exit:
-        commands.append("exit")
+        if exit:
+            commands.append("exit")
 
     basename = os.path.splitext(os.path.basename(output_movie))[0]
-    script_name = f"{basename}_script.cxc"
+    script_name = f"{basename}_{script_suffix}.cxc"
     script_path = os.path.join(os.path.dirname(os.path.abspath(output_movie)), script_name)
 
     with open(script_path, "w") as out:
@@ -329,10 +442,10 @@ def write_chimerax_script_movie(
     return script_path
 
 def write_chimerax_script_image(
-    mrc_file, pdb_file, output_image, output_session,
-    colour, background, transparent_background, contour, exit=True, save=False,
-    label=False,
-    chain_colours=None
+    mrc_file, pdb_file, output_image,
+    colour, background, transparent_background, contour, exit=True,
+    label=False, session_only=False, script_suffix="script",
+    chain_colours=None, turnxz=(-90, 0)
 ):
     commands = [
         f"open {shlex.quote(mrc_file)}",
@@ -368,17 +481,22 @@ def write_chimerax_script_image(
         "lighting soft",
         "view #1",
         "zoom 0.8",
-        "turn x -90",
-        f"save {shlex.quote(output_image)} format png supersample 4 transparentBackground {transparent_background}",
+        f"turn x {turnxz[0]:g}",
+        f"turn z {turnxz[1]:g}",
     ])
 
-    if save:
-        commands.append(f"save {shlex.quote(output_session)}")
-    if exit:
-        commands.append("exit")
+    if session_only:
+        pass
+    else:
+        commands.append(
+            f"save {shlex.quote(output_image)} format png supersample 4 transparentBackground {transparent_background}"
+        )
+
+        if exit:
+            commands.append("exit")
 
     basename = os.path.splitext(os.path.basename(output_image))[0]
-    script_name = f"{basename}_script.cxc"
+    script_name = f"{basename}_{script_suffix}.cxc"
     script_path = os.path.join(os.path.dirname(os.path.abspath(output_image)), script_name)
 
     with open(script_path, "w") as out:
@@ -525,7 +643,7 @@ def main():
     
     group_render.add_argument(
         '--quality',
-        choices=['publication', 'onscreen', 'web', 'web1', 'web2', 'web3'],
+        choices=['publication', 'presentation', 'onscreen', 'web', 'web1', 'web2', 'web3'],
         default='onscreen', help="quality to use in rendering"
     )
 
@@ -538,7 +656,7 @@ def main():
 
     group_render.add_argument(
         '--colour', '--color',
-        choices=['kelly', 'blue', 'emdb', 'rainbow', 'rainbowr', 'chain'],
+        choices=available_colour_choices(),
         default='blue', help="Colour scheme for map and model; chain requires --model and --chain-colours"
     )
 
@@ -562,6 +680,10 @@ def main():
         action='store_true',
         help='Add a bottom-right label with the EMD-ID and PDB ID'
     )
+    group_render.add_argument(
+        '--turnxz', type=parse_turnxz, default=(-90, 0), metavar='X,Z',
+        help='Initial camera turns around X and Z (default: -90,0)'
+    )
 
     # -------------------------------
     # GROUP: Output Options
@@ -571,7 +693,18 @@ def main():
     group_out.add_argument('--outname', help="Base prefix for output files")
     group_out.add_argument('--outdir', '--out-dir', help="Output directory")
 
-    group_out.add_argument('--save-session', action='store_true')
+    group_out.add_argument(
+        '--save-script',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Generate the normal render-and-exit ChimeraX scene script'
+    )
+    group_out.add_argument(
+        '--save-session',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Generate a ChimeraX scene script for interactive inspection without saving output or exiting'
+    )
     group_out.add_argument('--script-only', action='store_true')
     group_out.add_argument('--no-exit', action='store_true')
     group_out.add_argument(
@@ -598,14 +731,10 @@ def main():
     )
     
     group_exec.add_argument('--ignore-check', action='store_true')
+    validate_colour_registry()
     args = parser.parse_args()
 
-    if args.colour == "chain" and not args.model:
-        parser.error("--colour chain requires --model to be specified")
-    if args.colour == "chain" and not args.chain_colours:
-        parser.error("--colour chain requires --chain-colours")
-    if args.chain_colours and args.colour != "chain":
-        parser.error("--chain-colours can only be used with --colour chain")
+    validate_colour_selection(args.colour, args.model, args.chain_colours, parser)
 
     chain_colours = None
     if args.chain_colours:
@@ -690,26 +819,41 @@ def main():
 
     if args.format in ("movie", "both"):
         output_movie = f"{outbase}_chimerax_movie{movie_extension_map[args.movie_format]}"
-        output_session = f"{outbase}_chimerax_movie_session.cxs"
 
-        script_path = write_chimerax_script_movie(
-            mrc, pdb, output_movie, output_session, args.quality, 
-            args.colour, args.background, contour_value, args.movie_format,
-            save=args.save_session,
-            label=args.label,
-            chain_colours=chain_colours,
-            exit=not args.no_exit
-        )
+        if args.save_script:
+            script_path = write_chimerax_script_movie(
+                mrc, pdb, output_movie, args.quality,
+                args.colour, args.background, contour_value, args.movie_format,
+                label=args.label,
+                session_only=False,
+                script_suffix="script",
+                chain_colours=chain_colours,
+                turnxz=args.turnxz,
+                exit=not args.no_exit
+            )
 
-        print(f"Movie script → {script_path}")
-        generated_outputs.append(f"Movie script: {format_relative_path(script_path, summary_dir)}")
-        generated_outputs.append(f"Movie output: {format_relative_path(output_movie, summary_dir)}")
+            print(f"Movie script → {script_path}")
+            generated_outputs.append(f"Movie script: {format_relative_path(script_path, summary_dir)}")
+            generated_outputs.append(f"Movie output: {format_relative_path(output_movie, summary_dir)}")
+
+            if not args.script_only:
+                run_chimerax(script_path, chimerax_executable)
+                print(f"Movie created → {output_movie}")
+
         if args.save_session:
-            generated_outputs.append(f"Movie session: {format_relative_path(output_session, summary_dir)}")
+            session_script_path = write_chimerax_script_movie(
+                mrc, pdb, output_movie, args.quality,
+                args.colour, args.background, contour_value, args.movie_format,
+                label=args.label,
+                session_only=True,
+                script_suffix="session_script",
+                chain_colours=chain_colours,
+                turnxz=args.turnxz,
+                exit=False
+            )
 
-        if not args.script_only:
-            run_chimerax(script_path, chimerax_executable)
-            print(f"Movie created → {output_movie}")
+            print(f"Movie session script → {session_script_path}")
+            generated_outputs.append(f"Movie session script: {format_relative_path(session_script_path, summary_dir)}")
 
     # ============================
     # IMAGE
@@ -717,26 +861,41 @@ def main():
 
     if args.format in ("image", "both"):
         output_image = f"{outbase}_chimerax_image.png"
-        output_session = f"{outbase}_chimerax_image_session.cxs"
 
-        script_path = write_chimerax_script_image(
-            mrc, pdb, output_image, output_session,
-            args.colour, args.background, args.transparent, contour_value,
-            save=args.save_session,
-            label=args.label,
-            chain_colours=chain_colours,
-            exit=not args.no_exit
-        )
+        if args.save_script:
+            script_path = write_chimerax_script_image(
+                mrc, pdb, output_image,
+                args.colour, args.background, args.transparent, contour_value,
+                label=args.label,
+                session_only=False,
+                script_suffix="script",
+                chain_colours=chain_colours,
+                turnxz=args.turnxz,
+                exit=not args.no_exit
+            )
 
-        print(f"Image script → {script_path}")
-        generated_outputs.append(f"Image script: {format_relative_path(script_path, summary_dir)}")
-        generated_outputs.append(f"Image output: {format_relative_path(output_image, summary_dir)}")
+            print(f"Image script → {script_path}")
+            generated_outputs.append(f"Image script: {format_relative_path(script_path, summary_dir)}")
+            generated_outputs.append(f"Image output: {format_relative_path(output_image, summary_dir)}")
+
+            if not args.script_only:
+                run_chimerax(script_path, chimerax_executable)
+                print(f"Image created → {output_image}")
+
         if args.save_session:
-            generated_outputs.append(f"Image session: {format_relative_path(output_session, summary_dir)}")
+            session_script_path = write_chimerax_script_image(
+                mrc, pdb, output_image,
+                args.colour, args.background, args.transparent, contour_value,
+                label=args.label,
+                session_only=True,
+                script_suffix="session_script",
+                chain_colours=chain_colours,
+                turnxz=args.turnxz,
+                exit=False
+            )
 
-        if not args.script_only:
-            run_chimerax(script_path, chimerax_executable)
-            print(f"Image created → {output_image}")
+            print(f"Image session script → {session_script_path}")
+            generated_outputs.append(f"Image session script: {format_relative_path(session_script_path, summary_dir)}")
 
     if generated_outputs:
         summary_lines.extend(["", "Generated outputs:"])

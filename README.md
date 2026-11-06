@@ -1,6 +1,6 @@
 # ChimeraX Auto-Rendering Utility
 
-A command-line tool for generating publication-quality movies and images from cryo-EM density maps using UCSF ChimeraX. This script supports automatic contour selection, map colouring, background control, transparent rendering, command logging, and session export.
+A command-line tool for generating publication-quality movies and images from cryo-EM density maps using UCSF ChimeraX. This script supports automatic contour selection, map colouring, background control, transparent rendering, command logging, and ChimeraX scene scripts.
 
 ---
 
@@ -26,7 +26,8 @@ Supported methods:
 - Colour themes: `kelly`, `blue`, `emdb`, `rainbow`, `rainbowr`, `chain`
 - Backgrounds including Bluesky dark mode (`#161f28`)
 - Optional transparent PNG rendering
-- Optional ChimeraX session `.cxs` export
+- Optional ChimeraX scene script export
+- New colour gradients are defined once in `COLOUR_SPECS` inside the Python script and appear in `--help` automatically.
 
 ---
 
@@ -36,10 +37,10 @@ Given an output base name `OUTBASE`, the script creates:
 
 - `OUTBASE_chimerax_movie.mov`
 - `OUTBASE_chimerax_movie_script.cxc`
+- `OUTBASE_chimerax_movie_session_script.cxc`
 - `OUTBASE_chimerax_image.png`
 - `OUTBASE_chimerax_image_script.cxc`
-- `OUTBASE_chimerax_movie_session.cxs` *(optional)*
-- `OUTBASE_chimerax_image_session.cxs` *(optional)*
+- `OUTBASE_chimerax_image_session_script.cxc`
 - `OUTBASE_summary.txt` (records the exact command used and a summary of outputs)
 
 ---
@@ -73,11 +74,35 @@ python emdb.chimerax_make_image_movie.py --mrc map.mrc --outdir results/ --outna
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --transparent
 ```
 
+### Camera orientation
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --turnxz 90,-30
+```
+The default is `--turnxz -90,0`. Both render and interactive CXC scripts use the specified X and Z turns.
+
 ### Corner label with EMD and PDB IDs
 ```
 python emdb.chimerax_make_image_movie.py --mrc map.mrc --model model.pdb --label
 ```
 This adds a bottom-right 2D label in the generated ChimeraX script. If no model is provided, the label falls back to the map EMD-ID only.
+
+### Save a ChimeraX render script
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --format image --save-script
+```
+This renders the image and writes the render scene `*.cxc` script.
+
+### Open ChimeraX interactively
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --format image --save-session
+```
+This writes a second `*.cxc` script that sets up the same scene but does not save the rendered image and does not exit.
+
+### Disable either script
+```
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --no-save-session
+python emdb.chimerax_make_image_movie.py --mrc map.mrc --no-save-script
+```
 
 ### Chain-specific colouring
 ```
@@ -114,6 +139,8 @@ Credit: Davis lab - MIT
 
 - `.gz` input (map or model) is automatically decompressed.
 - When `--script-only` is used, ChimeraX is not launched and only a script for running ChimeraX is produced.
+- `--save-script` is enabled by default and writes the normal render scene `*.cxc`.
+- `--save-session` is enabled by default and writes an additional interactive `*.cxc` without saving output or exiting.
 - All outputs are placed in `--outdir` or beside the MRC file by default.
 - Summary output is enabled by default; use `--no-summary` to skip writing `OUTBASE_summary.txt`.
 
