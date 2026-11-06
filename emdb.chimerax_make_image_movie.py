@@ -414,6 +414,8 @@ def write_chimerax_script_movie(
 
         if quality == "publication":
             commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
+        if quality == "presentation":
+            commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
         elif quality == "onscreen":
             commands.append(f"movie encode output {shlex.quote(output_movie)} format {movie_format} framerate 30 quality highest",)
         elif quality == "web":
